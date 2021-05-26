@@ -3,7 +3,6 @@
 package main
 
 import (
-	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -57,32 +56,34 @@ type SP_DEVICE_INTERFACE_DETAIL_DATA struct {
 	DevicePath [1]uint16
 }
 
-func FindDevices(classGUID windows.GUID) ([]string, error) {
-	dis, err := SetupDiGetClassDevs(&classGUID, nil, 0, DIGCF_PRESENT|DIGCF_DEVICEINTERFACE)
+func FindDevices(classGUID windows.GUID) (devices []string, err error) {
+	var (
+		handle HDEVINFO
+		idata  SP_DEVINFO_DATA
+		edata  SP_DEVICE_INTERFACE_DATA
+	)
+
+	handle, err = SetupDiGetClassDevs(&classGUID, nil, 0, DIGCF_PRESENT|DIGCF_DEVICEINTERFACE)
 	if err != nil {
 		return nil, err
 	}
-	defer SetupDiDestroyDeviceInfoList(dis)
+	defer SetupDiDestroyDeviceInfoList(handle)
 
-	var idata SP_DEVINFO_DATA
 	idata.cbSize = uint32(unsafe.Sizeof(idata))
-
-	var edata SP_DEVICE_INTERFACE_DATA
 	edata.cbSize = uint32(unsafe.Sizeof(edata))
 
-	var v []string
-	for i := uint32(0); SetupDiEnumDeviceInfo(dis, i, &idata) == nil; i++ {
-		for j := uint32(0); SetupDiEnumDeviceInterfaces(dis, &idata, &classGUID, j, &edata) == nil; j++ {
-
-			p, err := getDevicePath(dis, &edata)
+	for i := uint32(0); SetupDiEnumDeviceInfo(handle, i, &idata) == nil; i++ {
+		for j := uint32(0); SetupDiEnumDeviceInterfaces(handle, &idata, &classGUID, j, &edata) == nil; j++ {
+			var path string
+			path, err = getDevicePath(handle, &edata)
 			if err != nil {
-				return nil, fmt.Errorf("GetDevicePath: %v", err)
+				return
 			}
 
-			v = append(v, p)
+			devices = append(devices, path)
 		}
 	}
-	return v, nil
+	return
 }
 
 func SetupDiGetClassDevs(classGuid *windows.GUID, enumerator *uint16, hwndParent HWND, flags uint32) (handle HDEVINFO, err error) {
@@ -152,8 +153,8 @@ func getDevicePath(dis HDEVINFO, edata *SP_DEVICE_INTERFACE_DATA) (path string, 
 		return
 	}
 
-	// path = windows.UTF16PtrToString(&didd.DevicePath[0])
-	path = ""
+	path = windows.UTF16PtrToString(&didd.DevicePath[0]) // WORKS
+	// path = "" //! DOES NOT WORK
 
 	return
 }
